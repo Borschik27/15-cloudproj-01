@@ -4,10 +4,10 @@
 В ходе выполнения работы был написан проект на terraform который представлен в проекте
 
 Nat-Instance:
-![Screenshot 2025-01-31 143433](https://github.com/user-attachments/assets/ac84301d-e76e-4c3d-bc9f-9af050cc983f)
+![Screenshot 2025-01-31 143433](https://github.com/user-attachments/assets/5e5178bf-8ec0-49e5-bce8-96baa058e549)
 
 Созданы фиртуальные машины:
-![Screenshot 2025-01-31 143455](https://github.com/user-attachments/assets/89f00883-cf59-48af-ae88-d3eb74358021)
+![Screenshot 2025-01-31 143455](https://github.com/user-attachments/assets/0396559c-eba2-448c-8028-a1f2c5d18ddf)
 
 После подключения на узел попадаем на виртуальную машину в приватной сети и попробуем одновить пакеты и сделать запрос для проверки интернета
 ```
