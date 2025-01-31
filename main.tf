@@ -1,9 +1,9 @@
 ### Local vars
 locals {
-  vpc_name          = "cloud-proj"
+  vpc_name          = "cloud-nat"
   subnet_name1      = "public"
   subnet_name2      = "private"
-  group_nat_name    = "nat-instance-group"
+  sg_nat_name       = "nat-instance-sg"
   vm_test_pub_name  = "public-vm"
   vm_test_priv_name = "private-vm"
   vm_nat_name       = "nat-instance"
@@ -13,78 +13,11 @@ locals {
   image_family      = "ubuntu-24-04-lts"
   nat_image_id      = "fd8lq67qr9o6fhjc64fl"
 
-  nat_ip_address    = "192.168.10.254"
-  test_public_ipa   = "192.168.10.66"
-
-  test_private_ipa  = "192.168.20.88"
+  local_nat_ipa     = "192.168.10.254"
+  local_pub_vm_ipa  = "192.168.10.88"
+  local_priv_vm_ipa = "192.168.20.66"
 }
 ### End local vars
-
-### Create VPC
-resource "yandex_vpc_network" "cloud_proj" {
-  name = local.vpc_name
-}
-### End VPC
-
-### Create subnet
-resource "yandex_vpc_subnet" "public" {
-  name           = local.subnet_name1
-  zone           = var.default_zone
-  network_id     = yandex_vpc_network.cloud_proj.id
-  v4_cidr_blocks = local.public_cidr
-  route_table_id = yandex_vpc_route_table.nat-instance-route.id
-}
-
-resource "yandex_vpc_subnet" "private" {
-  name           = local.subnet_name2
-  zone           = var.default_zone
-  network_id     = yandex_vpc_network.cloud_proj.id
-  v4_cidr_blocks = local.private_cidr
-  route_table_id = yandex_vpc_route_table.nat-instance-route.id
-}
-### End create
-
-### Create security group
-resource "yandex_vpc_security_group" "nat-instance-group" {
-  name       = local.group_nat_name
-  network_id = yandex_vpc_network.cloud_proj.id
-
-  egress {
-    protocol       = "ANY"
-    description    = "any"
-    v4_cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    protocol       = "TCP"
-    description    = "ssh"
-    v4_cidr_blocks = ["0.0.0.0/0"]
-    port           = 22
-  }
-
-  ingress {
-    protocol       = "TCP"
-    description    = "ext-http"
-    v4_cidr_blocks = ["0.0.0.0/0"]
-    port           = 80
-  }
-
-  ingress {
-    protocol       = "TCP"
-    description    = "ext-https"
-    v4_cidr_blocks = ["0.0.0.0/0"]
-    port           = 443
-  }
-}
-### End create security group 
-
-data "yandex_compute_image" "nat_image" {
-  image_id = local.nat_image_id
-}
-
-data "yandex_compute_image" "vm" {
-  family = local.image_family
-}
 
 ### Cloud init for ubunutu 2404
 data "template_file" "cloudinit_2404" {
@@ -117,10 +50,75 @@ data "template_file" "cloudinit_nat" {
 }
 ### End cloud init
 
+### Create VPC
+resource "yandex_vpc_network" "cloud_nat" {
+  name = local.vpc_name
+}
+### End VPC
+
+### Create subnet
+resource "yandex_vpc_subnet" "public" {
+  name           = local.subnet_name1
+  zone           = var.default_zone
+  network_id     = yandex_vpc_network.cloud_nat.id
+  v4_cidr_blocks = local.public_cidr
+}
+
+resource "yandex_vpc_subnet" "private" {
+  name           = local.subnet_name2
+  zone           = var.default_zone
+  network_id     = yandex_vpc_network.cloud_nat.id
+  v4_cidr_blocks = local.private_cidr
+  route_table_id = yandex_vpc_route_table.nat_instance_route.id
+}
+### End create
+
+### Create security group
+resource "yandex_vpc_security_group" "nat_instance_sg" {
+  name       = local.sg_nat_name
+  network_id = yandex_vpc_network.cloud_nat.id
+
+  egress {
+    protocol       = "ANY"
+    description    = "any"
+    v4_cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    protocol       = "TCP"
+    description    = "ssh"
+    v4_cidr_blocks = ["0.0.0.0/0"]
+    port           = 22
+  }
+
+  ingress {
+    protocol       = "TCP"
+    description    = "ext-http"
+    v4_cidr_blocks = ["0.0.0.0/0"]
+    port           = 80
+  }
+
+  ingress {
+    protocol       = "TCP"
+    description    = "ext-https"
+    v4_cidr_blocks = ["0.0.0.0/0"]
+    port           = 443
+  }
+}
+### End create security group 
+
+### Set images name
+data "yandex_compute_image" "nat_image" {
+  image_id = local.nat_image_id
+}
+
+data "yandex_compute_image" "vm" {
+  family = local.image_family
+}
+### End images name
 
 ### Create nat-instance
 resource "yandex_compute_instance" "nat_instance" {
-  
   name        = local.vm_nat_name
   platform_id = var.platform_id
   zone        = var.default_zone
@@ -143,13 +141,13 @@ resource "yandex_compute_instance" "nat_instance" {
       size = "20"
       type = "network-ssd"
     }
-}
+  }
 
   network_interface {
     subnet_id   = yandex_vpc_subnet.public.id
+    security_group_ids = [yandex_vpc_security_group.nat_instance_sg.id]
     nat         = true
-    ip_address  = local.nat_ip_address
-    security_group_ids = [ yandex_vpc_security_group.nat-instance-group.id ]
+    ip_address  = local.local_nat_ipa
   }
 }
 ### End create nat-instace
@@ -183,9 +181,9 @@ resource "yandex_compute_instance" "public_vm" {
 
   network_interface {
     subnet_id   = yandex_vpc_subnet.public.id
-    nat         = true
-    ip_address  = local.test_public_ipa
-    security_group_ids = [ yandex_vpc_security_group.nat-instance-group.id ]
+    security_group_ids = [yandex_vpc_security_group.nat_instance_sg.id]
+    nat         = false
+    ip_address  = local.local_pub_vm_ipa
   }
 }
 ### End create test VM in public-network
@@ -219,17 +217,18 @@ resource "yandex_compute_instance" "private_vm" {
 
   network_interface {
     subnet_id   = yandex_vpc_subnet.private.id
-    nat         = false
-    ip_address  = local.test_private_ipa
-    security_group_ids = [ yandex_vpc_security_group.nat-instance-group.id ]
+    security_group_ids = [yandex_vpc_security_group.nat_instance_sg.id]
+    nat = false
+    ip_address = local.local_priv_vm_ipa
+    
   }
 }
 ### End create test VM in PRIVATE-network
 
 ## Create route-table/static-route
-resource "yandex_vpc_route_table" "nat-instance-route" {
+resource "yandex_vpc_route_table" "nat_instance_route" {
   name       = local.route_table_name
-  network_id = yandex_vpc_network.cloud_proj.id
+  network_id = yandex_vpc_network.cloud_nat.id
   static_route {
     destination_prefix = "0.0.0.0/0"
     next_hop_address   = yandex_compute_instance.nat_instance.network_interface.0.ip_address
@@ -237,34 +236,32 @@ resource "yandex_vpc_route_table" "nat-instance-route" {
 }
 ## End create route-table/static-route
 
-# ### Wait complite cloud-init
-# resource "null_resource" "wait_for_cloud_init" {
-#   for_each = {
-#     nat_instance  = yandex_compute_instance.nat_instance
-#     public_vm     = yandex_compute_instance.public_vm
-#     private_vm    = yandex_compute_instance.private_vm
-#   }
+### Wait complite cloud-init
+resource "null_resource" "wait_for_cloud_init" {
+  for_each = {
+    nat_instance  = yandex_compute_instance.nat_instance
+  }
 
-#   provisioner "remote-exec" {
-#     inline = [
-#       "while ! cloud-init status --wait >/dev/null; do echo 'Waiting for cloud-init to complete...'; sleep 30; done"
-#     ]
+  provisioner "remote-exec" {
+    inline = [
+      "while ! cloud-init status --wait >/dev/null; do echo 'Waiting for cloud-init to complete...'; sleep 30; done"
+    ]
 
-#     connection {
-#       type     = "ssh"
-#       host     = each.value.network_interface[0].nat_ip_address
-#       user     = var.vm_user
-#       private_key = file(var.vms_ssh_root_key_file) 
-#     }
-#   }
+    connection {
+      type     = "ssh"
+      host     = each.value.network_interface[0].nat_ip_address
+      user     = var.vm_user
+      private_key = file(var.vms_ssh_root_key_file) 
+    }
+  }
 
-#   depends_on = [
-#     yandex_compute_instance.nat_instance,
-#     yandex_compute_instance.private_vm,
-#     yandex_compute_instance.public_vm
-#   ]
-# }
-# ### End wait
+  depends_on = [
+    yandex_compute_instance.nat_instance,
+    yandex_compute_instance.private_vm,
+    yandex_compute_instance.public_vm
+  ]
+}
+### End wait
 
 # resource "local_file" "ansible_inventory" {
 #   depends_on = [data.template_file.cloudinit]
